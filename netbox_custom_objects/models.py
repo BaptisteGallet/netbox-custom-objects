@@ -27,7 +27,7 @@ from extras.choices import (
     CustomFieldUIVisibleChoices,
 )
 from extras.models.customfields import SEARCH_TYPES
-from netbox.models import ChangeLoggedModel, PrimaryModel
+from netbox.models import ChangeLoggedModel, NetBoxModel
 from netbox.models.features import (
     BookmarksMixin,
     ChangeLoggingMixin,
@@ -41,6 +41,7 @@ from netbox.models.features import (
     TagsMixin,
     get_model_features,
 )
+from netbox.plugins import get_plugin_config
 from netbox.registry import registry
 from netbox.search import SearchIndex
 from utilities import filters
@@ -168,7 +169,7 @@ class CustomObject(
         return reverse(cls._get_viewname(action, rest_api), kwargs=kwargs)
 
 
-class CustomObjectType(PrimaryModel):
+class CustomObjectType(NetBoxModel):
     # Class-level cache for generated models
     _model_cache = {}
     _through_model_cache = (
@@ -193,6 +194,15 @@ class CustomObjectType(PrimaryModel):
                 inverse_match=True,
             ),
         ),
+    )
+    description = models.CharField(
+        verbose_name=_('description'),
+        max_length=200,
+        blank=True
+    )
+    comments = models.TextField(
+        verbose_name=_('comments'),
+        blank=True
     )
     version = models.CharField(max_length=10, blank=True)
     verbose_name = models.CharField(max_length=100, blank=True)
@@ -222,6 +232,18 @@ class CustomObjectType(PrimaryModel):
 
     def __str__(self):
         return self.display_name
+
+    def clean(self):
+        super().clean()
+
+        # Enforce max number of COTs that may be created (max_custom_object_types)
+        if not self.pk:
+            max_cots = get_plugin_config("netbox_custom_objects", "max_custom_object_types")
+            if max_cots and CustomObjectType.objects.count() > max_cots:
+                raise ValidationError(_(
+                    f"Maximum number of Custom Object Types ({max_cots}) "
+                    "exceeded; adjust max_custom_object_types to raise this limit"
+                ))
 
     @classmethod
     def clear_model_cache(cls, custom_object_type_id=None):
